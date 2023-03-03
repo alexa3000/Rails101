@@ -135,16 +135,16 @@ yarn -v
 
 `1.22.19`
 
-## Install Rails 5.1.7
-
-```sh
-gem install rails -v 5.1.7
-```
-
 ## Create GemSet
 
 ```sh
 rvm use 2.7.2@rails517 --create --default --ruby-version
+```
+
+## Install Rails 5.1.7
+
+```sh
+gem install rails -v 5.1.7
 ```
 
 ## Setup UFW
@@ -153,27 +153,15 @@ rvm use 2.7.2@rails517 --create --default --ruby-version
 sudo ufw allow from 192.168.0.0/24
 sudo ufw enable
 ```
-
-## Clone Rails101
-
-```sh
-git clone git@github.com:alexcode-cc/Rails101.git
-cd rails101
-bundle
-rails db:migrate
-rails db:seed
-rails server -b 0.0.0.0
-```
-
-# Setup Rails102
+# Setup Rails101
 
 ## Create New Project
 
 ```sh
-rails new rails102
-cp .ruby-gemset rails102/.
-cp .ruby-version rails102/.
-cd rails102
+rails new rails101
+cp .ruby-gemset rails101/.
+cp .ruby-version rails101/.
+cd rails101
 bundle
 echo rails server -b 0.0.0.0 >> run.sh
 chmod u+x run.sh
@@ -524,6 +512,14 @@ config.action_mailer.default_url_options = { host: 'localhost', port: 3000 }
 ```
 
 ```sh
+vim config/initializers/devise.rb
+```
+
+```rb
+config.secret_key = 'xxxxxxxxxx'
+``
+
+```sh
 vim app/views/layouts/application.html.erb
 ```
 
@@ -621,4 +617,444 @@ rails db:migrate
 ```sh
 git add .
 git commit -m "feat: add uer id to board"
+```
+
+## Modify boards controller / views for User 
+
+```sh
+vim app/controllers/boards_controller.rb
+```
+
+```rb
+before_action :authenticate_user! , only: [:new, :create]
+
+def create
+  @board = Board.new(board_params)
+  @board.user = current_user
+
+  respond_to do |format|
+    if @board.save
+      format.html { redirect_to board_url(@board), notice: "Board was successfully created." }
+      format.json { render :show, status: :created, location: @b
+      format.html { render :new, status: :unprocessable_entity }
+      format.json { render json: @board.errors, status: :unprocessable_entity }
+    end
+  end
+end
+```
+
+```sh
+vim app/views/boards/index.html.erb
+```
+```rb
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Creator</th>
+      <th colspan="3"></th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <% @boards.each do |board| %>
+      <tr>
+        <td><%= board.name %></td>
+        <td><%= board.user.email %></td>
+        <td><%= link_to 'Show', board %></td>
+        <td><%= link_to 'Edit', edit_board_path(board) %></td>
+        <td><%= link_to 'Destroy', board, method: :delete, data: { confirm: 'Are you sure?' } %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+```
+## Modify seed for create default user 
+
+```sh
+vim db/seed.rb
+```
+
+```rb
+user = User.create! :email => 'admin@rails101.org', :password => 'P@ssw0rd9999', :password_confirmation => 'P@ssw0rd9999'
+5.times do |i|
+  Board.create(name: "board ##{i+1}", user_id: 1)
+  2.times do |j|
+    Post.create(title: "title for b#{i+1} p#{j+1}", content: "content for board ##{i+1} post ##{j+1}", board_id: i+1)
+  end
+end 
+```
+
+```sh
+rails db:reset
+```
+
+## Only board owner can edit/delete post
+
+```sh
+vim app/controllers/boards_controller.rb
+```
+
+```rb
+  before_action :authenticate_user! , only: [:new, :create, :edit, :update, :destroy]
+  before_action :check_user , only: [:edit, :update, :destroy]
+
+def check_user
+  if current_user != @board.user
+    redirect_to root_path, alert: "#{current_user.email}, You are no permission."
+  end
+end
+```
+
+```sh
+vim app/views/boards/index.html.erb
+```
+
+```rb
+<tbody>
+  <% @boards.each do |board| %>
+    <tr>
+      <td><%= board.name %></td>
+      <td><%= board.user.email %></td>
+      <td><%= link_to 'Show', board %></td>
+      <% if current_user && current_user == board.user %>
+      <td><%= link_to 'Edit', edit_board_path(board) %></td>
+      <td><%= link_to 'Destroy', board, method: :delete, data: { confirm: 'Are you sure?' } %></td>
+      <% end %>
+    </tr>
+  <% end %>
+</tbody>
+```
+
+```sh
+vim app/views/boards/show.html.erb
+```
+
+```rb
+<tbody>
+  <% @posts.each do |post| %>
+    <tr>
+      <td><%= post.title %>
+      <td><%= post.content %>
+      <td><%= link_to 'Show', board_post_path(@board, post) %></td>
+      <% if current_user && current_user == @board.user %>
+      <td><%= link_to 'Edit', edit_board_post_path(@board, post) %></td>
+      <td><%= link_to 'Destroy', board_post_path(@board, post), method: :delete, data: { confirm: 'Are you sure?' } %></td>
+      <% end %>
+    </tr>
+  <% end %>
+</tbody>
+```
+
+```sh
+vim app/controllers/posts_controller.rb
+```
+
+```rb
+before_action :authenticate_user! , except: [:show]
+before_action :check_user , only: [:new, :edit, :update, :destroy]
+
+def check_user
+  if current_user != @board.user
+    redirect_to board_path(@board), alert: "#{current_user.email}, You are no permission to create/update/delete post."
+  end
+end
+```
+
+```sh
+vim app/views/posts/show.html.erb
+```
+
+```rb
+<% if current_user && current_user == @board.user %>
+<%= link_to 'Edit', edit_board_post_path(@board, @post) %> |
+<% end %>
+```
+
+```sh
+vim app/views/layouts/application.html.erb
+```
+
+```rb
+<body>
+  <%= render 'common/user_nav' %>
+  <!--<p class="notice"><%= notice %></p>-->
+  <p class="alert" style="color:red"><%= alert %></p  >
+  <%= yield %>
+</body>
+```
+
+## Git Commit for  boards controller/views
+
+```sh
+git add .
+git commit -m "feat: modify boards/views for user permission"
+```
+
+# Setup Capistrano
+
+## Add deploy user
+
+```sh
+sudo adduser --disabled-password deploy
+```
+
+## Setup deploy user
+
+```sh
+sudo su deploy
+ssh-keygen -t rsa -C deploy@server
+exit
+sudo cp ~/.ssh/id_rsa.pub /tmp/admin.pub
+sudo su deploy
+cat /tmp/admin.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+## Setup RVM for deploy
+
+```sh
+gpg --keyserver keyserver.ubuntu.com --recv-keys 409B6B1796C275462A1703113804BB82D39DC0E3 7D2BAF1CF37B13E2069D6956105BD0E739499BDB
+\curl -sSL https://get.rvm.io | bash -s stable --auto-dotfiles
+source ~/.rvm/scripts/rvm
+```
+
+```sh
+vim ~/.gemrc
+```
+
+```yml
+gem: --no-ri --no-rdoc --no-document
+```
+
+```sh
+rvm install 2.7.2 --disable-install-document
+gem update --system
+rvm use 2.7.2@rails517 --create --default --ruby-version
+gem install rails -v 5.1.7
+exit
+```
+
+## Install Capistrano
+
+```sh
+vim Gemfile
+```
+
+```rb
+gem 'capistrano-rails'
+gem 'capistrano-passenger'
+gem 'capistrano-rvm'
+gem 'ed25519', '>= 1.2'
+gem 'bcrypt_pbkdf', '>= 1.0'
+```
+
+```sh
+bundle install
+```
+
+## Setup Capistrano
+
+```sh
+cap install
+vim Capfile
+```
+
+```rb
+require "capistrano/rvm"
+require "capistrano/rails"
+require "capistrano/passenger"
+```
+
+```sh
+vim config/deploy.rb
+```
+
+```rb
+set :application, "rails101"
+set :repo_url, "git@github.com:alexcode-cc/Rails101.git"
+
+set :deploy_to, "/home/deploy/rails101"
+
+append :linked_files, "config/database.yml", 'config/secrets.yml'
+
+append :linked_dirs, "log", "tmp/pids", "tmp/cache", "tmp/sockets", "tmp/webpacker", "public/system", "vendor", "storage"
+
+set :keep_releases, 5 
+
+set :passenger_restart_with_touch, true
+```
+
+```sh
+vim config/deploy/production.rb
+```
+
+```rb
+set :branch, "main"
+server "127.0.0.1", user: "deploy", roles: %w{app db web}, my_property: :my_value
+```
+
+'''sh
+sudo cp config/database.yml /home/deploy/rails101/shared/config/.
+sudo chown deploy:deploy /home/deploy/rails101/shared/config/database.yml
+sudo cp config/secrets.yml /home/deploy/rails101/shared/config/.
+sudo chown deploy:deploy /home/deploy/rails101/shared/config/secrets.yml
+cap production deploy:check
+```
+
+## Install Passenger
+
+```sh
+#sudo apt-get install -y nginx-extras passenger
+sudo apt-get install nginx
+```
+### Install our PGP key and add HTTPS support for APT
+```sh
+sudo apt install -y dirmngr gnupg apt-transport-https ca-certificates 
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 561F9B9CAC40B2F7
+```
+
+### Add our APT repository
+```sh
+sudo sh -c 'echo deb https://oss-binaries.phusionpassenger.com/apt/passenger focal main > /etc/apt/sources.list.d/passenger.list'
+sudo apt update
+```
+
+### Install Passenger + Nginx module
+```sh
+sudo apt install -y libnginx-mod-http-passenger
+if [ ! -f /etc/nginx/modules-enabled/50-mod-http-passenger.conf ]; then sudo ln -s /usr/share/nginx/modules-available/mod-http-passenger.load /etc/nginx/modules-enabled/50-mod-http-passenger.conf ; fi
+sudo ls /etc/nginx/conf.d/mod-http-passenger.conf
+sudo vim /etc/nginx/conf.d/mod-http-passenger.conf
+```
+
+```
+passenger_root /usr/lib/ruby/vendor_ruby/phusion_passenger/locations.ini;
+passenger_ruby /usr/bin/passenger_free_ruby;
+passenger_instance_registry_dir /var/run/passenger-instreg;
+```
+
+'''sh
+sudo /usr/bin/passenger-config validate-install
+sudo su deploy
+source ~/.rvm/scripts/rvm
+rvm use
+passenger-config about ruby-command
+```
+
+```
+passenger-config was invoked through the following Ruby interpreter:
+  Command: /home/deploy/.rvm/gems/ruby-2.7.2@rails517/wrappers/ruby
+  Version: ruby 2.7.2p137 (2020-10-01 revision 5445e04352) [x86_64-linux]
+  To use in Apache: PassengerRuby /home/deploy/.rvm/gems/ruby-2.7.2@rails517/wrappers/ruby
+  To use in Nginx : passenger_ruby /home/deploy/.rvm/gems/ruby-2.7.2@rails517/wrappers/ruby
+  To use with Standalone: /home/deploy/.rvm/gems/ruby-2.7.2@rails517/wrappers/ruby /usr/bin/passenger start
+
+## Notes for RVM users
+Do you want to know which command to use for a different Ruby interpreter? 'rvm use' that Ruby interpreter, then re-run 'passenger-config about ruby-command'.
+```
+
+```sh
+exit
+sudo vim /etc/nginx/sites-enabled/rails101.conf
+```
+
+```
+server {
+    listen 80;
+    server_name 127.0.0.1;
+
+    # Tell Nginx and Passenger where your app's 'public' directory is
+    root /home/deploy/rails101/current/public;
+
+    # Turn on Passenger
+    passenger_enabled on;
+    passenger_ruby /home/deploy/.rvm/gems/ruby-2.7.2@rails517/wrappers/ruby;
+
+    passenger_min_instances 1;
+
+    location ~ ^/assets/ {
+        expires 1y;
+        add_header Cache-Control public;
+        add_header ETag "";
+        break;
+   }
+}
+```
+
+```sh
+sudo service nginx restart
+sudo service nginx status
+```
+
+# Setup Mysql
+
+```sh
+sudo apt install mysql-common mysql-client libmysqlclient-dev mysql-server
+sudo mysql
+```
+
+```sql
+ALTER USER 'root'@'localhost' IDENTIFIED WITH auth_socket;
+ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'myrootpassword';
+FLUSH PRIVILEGES;
+CREATE DATABASE rails101 CHARACTER SET utf8mb4;
+CREATE USER 'rails101'@'localhost' IDENTIFIED BY 'rails101password';
+GRANT ALL PRIVILEGES ON rails101.* TO 'rails101'@'localhost';
+```
+
+```sh
+vim Gemfile
+```
+
+```rb
+# Use mysql as the database for Active Record
+gem 'mysql2', '>= 0.3.18', '< 0.6.0'
+ ```
+
+```sh
+echo config/database.yml >> .gitignore
+git rm config/database.yml
+git add .
+git commit -m "chore: remove database.yml from repo"
+
+vim config/database.yml
+```
+
+```yml
+default: &default
+  adapter: mysql2
+  encoding: utf8
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  username: root
+  password:
+  socket: /var/run/mysqld/mysqld.sock
+
+development:
+  <<: *default
+  database: rails101_development
+
+test:
+  <<: *default
+  database: rails101_test
+
+production:
+  <<: *default
+  database: rails101
+  username: rails101
+  password: <%= ENV['RAILS101_DATABASE_PASSWORD'] %>  
+```
+
+```sh
+rails db:create
+rails db:migrate
+rails db:seed
+./run.sh
+```
+
+```sh
+RAILS_ENV='production' rails db:create
+RAILS_ENV='production' rails db:migrate
+RAILS_ENV='production' rails db:seed
+RAILS_ENV='production' rails server -b 0.0.0.0
 ```
